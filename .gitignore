@@ -1,0 +1,21 @@
+# Vivado 산출물
+*.jou
+*.log
+*.str
+*.dcp
+*.bit
+*.ltx
+*.wdb
+.Xil/
+vivado*.backup*
+*_webtalk.*
+
+# 시뮬레이션 산출물
+xsim.dir/
+*.vcd
+*.wlf
+
+# 편집기/OS
+*.swp
+.DS_Store
+Thumbs.db
