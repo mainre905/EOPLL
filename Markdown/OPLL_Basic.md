@@ -1,4 +1,4 @@
-# 일일 작업 리포트 — 2026-08-5
+# 일일 작업 리포트 — 2026-08-05
 
 > **작성일** 2026-08-05
 > **작성** Gemini 3.1 Pro — 당일 작업 요약
@@ -70,12 +70,26 @@ OPLL은 오차를 측정하여 레이저를 실시간 교정(Feedback)하는 시
 
 ## 4. OPLL 안정성을 위한 황금률 및 최적 설계 예제
 
-### 4.1. 시스템 안정성 설계 방침
-발진을 막고 충분한 위상 여유($45^\circ \sim 60^\circ$)를 확보하기 위한 제어공학적 황금률 수식은 다음과 같습니다.
+발진을 막기 위한 제어공학적 안정성 수식은 다음과 같습니다.
 $$ \tau \cdot BW_{loop} \le 0.1 $$
-*(의미: 시스템 물리적 딜레이($\tau$)에 비해 제어 루프의 반응 속도($BW_{loop}$)가 최소 10배 이상 느려야 안전하다.)*
 
-### 4.2. [예제 2] 55GHz / 10ms 시스템의 최적 $\Delta L$ 설계
+### 4.1. 수식의 정확한 해석 (시간 차원 비교)
+위 수식은 "주파수가 느려야 한다"가 아니라, 제어기의 반응 시간 측면에서 해석해야 합니다. 양변을 정리하면 $10 \cdot \tau \le \frac{1}{BW_{loop}}$ 가 됩니다.
+> **[의미]** 제어기가 오차를 인지하고 교정하여 정착하는 데 걸리는 **시스템 반응 소요 시간($1/BW_{loop}$)**이, 물리적 **순수 지연 시간($\tau$)보다 최소 10배 이상 길게(느긋하게) 설정되어야** 오버슈트 및 발진을 막을 수 있습니다.
+
+### 4.2. 온도 제어 vs 레이저 OPLL의 스케일 차이 (왜 답답하지 않은가?)
+일반적인 온도 PI 제어에서 지연 시간($\tau$)이 1초라면, 저 수식에 의해 제어기는 10초 이상에 걸쳐 천천히 온도를 조절해야 하므로 매우 답답한 시스템이 됩니다.
+**하지만 OPLL은 빛을 다루기 때문에 시간 스케일이 전혀 다릅니다.**
+
+> **[$\Delta L = 10 \text{m}$ 인 OPLL 시스템의 실제 시간]**
+> *   **물리적 지연 시간($\tau$):** 빛이 10m를 가는 시간은 **$50 \text{ ns}$ (나노초)**.
+> *   **안정성 조건 대입:** $50\text{ns} \cdot BW \le 0.1 \rightarrow BW \le \mathbf{2 \text{ MHz}}$
+> *   **제어 정착 시간($1/BW$):** $1 / 2\text{MHz} = \mathbf{0.5 \text{ }\mu\text{s}}$ **(마이크로초)**
+
+즉, OPLL은 발진을 막기 위해 제어기의 반응 속도를 지연 시간의 10배나 느리게 제한($BW$ 축소)하더라도, **결과적으로 $0.5 \text{ }\mu\text{s}$ (1초에 2백만 번) 만에 오차를 완벽하게 교정**해 내는 초고속 제어 시스템입니다.
+
+
+### 4.3. [예제 2] 55GHz / 10ms 시스템의 최적 $\Delta L$ 설계
 *   **주어진 시스템 조건:** 
     *   $B = 55 \text{ GHz}$
     *   $T = 10 \text{ ms}$
@@ -99,72 +113,29 @@ $$ \tau \cdot BW_{loop} \le 0.1 $$
 
 ## 5. 파이썬 증명 시뮬레이션
 
-$\Delta L$이 1m에서 10m로 길어질 때, PD에서 관측되는 **실제 오실로스코프 파형(전압)의 주파수가 빽빽해지는 현상**을 증명하는 코드입니다.
+다음은 레이저 자체에 고유한 위상 노이즈가 존재할 때, 광로차 $\Delta L$을 1m에서 10m로 늘렸을 경우 실제 광검출기(PD) 단에서 관측되는 오실로스코프 파형의 변화를 시뮬레이션한 결과입니다
+![피팅](Image/fiber_length.png)
 
-```python
-import numpy as np
-import matplotlib.pyplot as plt
-
-# --- 1. 시스템 파라미터 ---
-c = 3e8
-n_eff = 1.47
-alpha = 5.5e12  # 55GHz / 10ms 스윕 속도
-
-L_short = 1.0   # 1m 광로차
-L_long = 10.0   # 10m 광로차
-
-# 지연 시간(tau) 계산
-tau_short = (n_eff * L_short) / c
-tau_long = (n_eff * L_long) / c
-
-# 이상적인 비트 주파수 (거리에 비례하여 10배 차이 발생)
-fb_base_short = alpha * tau_short  # 약 27.2 kHz
-fb_base_long = alpha * tau_long    # 약 272.7 kHz
-
-# 레이저 자체의 위상 노이즈 (1kHz 주기로 50MHz 폭으로 흔들림을 가정)
-error_amp = 50e6
-error_f = 1e3
-
-# 파형 관측을 위한 미세 시간 배열 (0.2ms)
-t = np.linspace(0, 0.0002, 5000)
-
-# --- 2. 오실로스코프 파형 생성 함수 ---
-def generate_oscilloscope_signal(t, tau, fb_base):
-    # 과거와 현재의 주파수 에러 차이 (물리적 뺄셈)
-    current_err = error_amp * np.sin(2 * np.pi * error_f * t)
-    past_err = error_amp * np.sin(2 * np.pi * error_f * (t - tau))
-    beat_error_freq = current_err - past_err  # 뺀 결과물 (에러 신호)
-    
-    # 순시 주파수 = 기본 비트주파수 + 에러 성분
-    inst_freq = fb_base + beat_error_freq
-    
-    # 주파수를 적분하여 위상(Phase) 도출
-    dt = t[1] - t[0]
-    phase = np.cumsum(inst_freq) * dt
-    
-    # 빛의 간섭 신호 (오실로스코프 전압 형태)
-    return np.cos(2 * np.pi * phase)
-
-# 파형 생성
-signal_short = generate_oscilloscope_signal(t, tau_short, fb_base_short)
-signal_long = generate_oscilloscope_signal(t, tau_long, fb_base_long)
-
-# --- 3. 결과 그래프 출력 ---
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-
-ax1.plot(t * 1000, signal_short, color='blue', linewidth=1.5)
-ax1.set_title(f"Oscilloscope Trace: 1m Fiber (Base Freq $\\approx$ {fb_base_short/1000:.1f} kHz)")
-ax1.set_ylabel("Voltage (V)")
-ax1.grid(True, linestyle='--', alpha=0.6)
-
-ax2.plot(t * 1000, signal_long, color='red', linewidth=1.5)
-ax2.set_title(f"Oscilloscope Trace: 10m Fiber (Base Freq $\\approx$ {fb_base_long/1000:.1f} kHz)")
-ax2.set_xlabel("Time (ms)")
-ax2.set_ylabel("Voltage (V)")
-ax2.grid(True, linestyle='--', alpha=0.6)
-
-plt.tight_layout()
-plt.show()
-```
 
 *   **시뮬레이션 결론:** 파이썬 실행 시 10m 광섬유의 파형(빨간색)이 1m 파형(파란색)보다 정확히 10배 더 빽빽하게 진동하는 고주파 파형임을 시각적으로 확인할 수 있습니다. 이 과정에서 파도에 숨겨진 미세한 에러 신호 진폭 역시 함께 증폭되어, 전자 회로가 레이저의 오차를 명확히 인지하고 제어(Feedback)할 수 있게 됩니다.
+<br>
+   
+*   **광로차($\Delta L$) 증가에 따른 비트 주파수($f_b$) 비례 증가 수식 증명**
+    MZI에서 생성되는 비트 주파수($f_b$)는 광원의 주파수 스윕 속도(Chirp rate, $\alpha$)와 간섭계 내부의 지연 시간($\tau$)의 곱으로 정의됩니다.
+
+    $$ f_b = \alpha \cdot \tau $$
+
+   광섬유 매질을 통과할 때의 물리적 지연 시간 $\tau$는 광로차 $\Delta L$에 비례합니다. ($n_{eff}$는 유효 굴절률, $c$는 빛의 속도)
+
+   $$ \tau = \frac{n_{eff} \cdot \Delta L}{c} $$
+
+   위의 지연 시간 수식을 비트 주파수 수식에 대입하면 다음과 같은 최종 관계식이 도출됩니다.
+
+   $$ f_b = \alpha \cdot \left( \frac{n_{eff}}{c} \right) \cdot \mathbf{\Delta L} $$
+
+   수식에서 $\alpha, n_{eff}, c$는 모두 고정된 상수이므로, **비트 주파수 $f_b$는 오직 광로차 $\Delta L$에 정비례(Linear Proportional)함**을 알 수 있습니다. 
+
+  따라서 $\Delta L$이 $1\text{m}$에서 $10\text{m}$로 **10배** 길어지면, 수식에 의해 파형의 비트 주파수 $f_b$ 역시 정확히 **10배 고주파(빽빽한 파형)**가 됩니다.
+
+  $$ \frac{f_{b(10m)}}{f_{b(1m)}} = \frac{\alpha \cdot \frac{n_{eff} \cdot \mathbf{10}}{c}}{\alpha \cdot \frac{n_{eff} \cdot \mathbf{1}}{c}} = \mathbf{10} $$
+
