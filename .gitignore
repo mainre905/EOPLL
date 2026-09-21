@@ -7,3 +7,12 @@ loopcnt_tap_time.csv
 *coe
 __pycache__/
 *.pyc
+# Vivado 프로젝트/빌드 산출물 (build_eopll.tcl 로 언제든 재생성 가능)
+vivado/
+*.jou
+*.log
+*.str
+.Xil/
+vitis_ws/
+*.xsa
+*.bit

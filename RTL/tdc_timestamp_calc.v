@@ -8,6 +8,13 @@ module tdc_timestamp_calc (
     input  wire [8:0]   ts_fine_idx,
     input  wire         ts_valid,
 
+    // ★ 2026-09-15 추가 : 교정표 RAM 쓰기/되읽기 (cal_clk = s_axi_aclk 도메인)
+    input  wire         cal_clk,
+    input  wire         cal_we,
+    input  wire [8:0]   cal_addr,
+    input  wire [12:0]  cal_din,
+    output wire [12:0]  cal_dout,
+
     output wire [63:0]  timestamp_ps,
     output wire         timestamp_valid,
     
@@ -18,12 +25,23 @@ module tdc_timestamp_calc (
 
     wire [12:0] calibrated_fine_ps;
 
-    // Vivado ROM IP (Latency 2 필수)
-    tdc_calib_rom u_lut_rom (
-        .clka  (clk),            
-        .ena   (1'b1),               
-        .addra (ts_fine_idx),        
-        .douta (calibrated_fine_ps)  
+    // ★ 2026-09-15 : tdc_calib_rom (ROM IP, COE 초기화) -> tdc_calib_ram (RTL 추론 BRAM, PS 가 씀)
+    //   [무엇이 문제였나] 교정표를 바꾸려면 COE 를 새로 만들어 재빌드해야 했다. 재빌드는
+    //     place & route 를 바꿔 히트 창을 옮기므로(09-05 : 탭 2~321 -> 24~348), 표를 만든
+    //     조건이 표를 넣는 순간 달라졌다.
+    //   [바꾼 것] PS 가 Mode 1 히스토그램으로 표를 계산해 AXI(0x2000 + i*4)로 쓴다.
+    //   [지켜야 할 것] Port B 읽기 지연 = 정확히 2클럭. ts_fine_idx 가 사이클 0 에 걸리면
+    //     에지1 주소 샘플 -> 에지2 출력 레지스터 -> 에지3 에서 Stage 3 가 calibrated_fine_ps_d3 로
+    //     잡는다. 1 이나 3 이면 앞뒤 사이클의 fine 번호로 찾은 값이 섞인다.
+    tdc_calib_ram u_lut_ram (
+        .clk_a  (cal_clk),
+        .we_a   (cal_we),
+        .addr_a (cal_addr),
+        .din_a  (cal_din),
+        .dout_a (cal_dout),
+        .clk_b  (clk),
+        .addr_b (ts_fine_idx),
+        .dout_b (calibrated_fine_ps)
     );
 
     // [Stage 1] 원본 버퍼
