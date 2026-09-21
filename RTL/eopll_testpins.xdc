@@ -58,5 +58,10 @@ set_property IOSTANDARD LVCMOS33 [get_ports {dac_ctrl_tri_io[*]}]
 #  [왜] 시험용이라 아무것도 안 달려 있다. 필요 이상으로 세게 구동할 이유가 없고,
 #    동시 스위칭 잡음을 줄이는 편이 TDC 지연선에 유리하다 (TDC 는 뱅크가 다르지만
 #    전원·그라운드는 공유한다).
+#  ★ 2026-09-21 : SLEW SLOW 는 출력 버퍼를 느리게 만든다. 첫 시험 빌드(eopll_tp2)에서
+#    setup WNS -3.587 ns 가 났고 위반 경로 5개가 전부 clk_fpga_0 -> dac_sck_gen 이었는데,
+#    이 느린 버퍼가 한몫했다 (생성 클럭 dac_sck_gen 이 그 버퍼 뒤 패드에서 정의된다).
+#    이제 build_eopll.tcl 이 시험 핀맵일 때 RTL/dac_timing.tcl 을 아예 넣지 않으므로
+#    DAC 출력이 무제약이 되어 이 문제가 사라진다. 잡음 쪽 이유만 남으므로 SLOW 를 유지한다.
 set_property DRIVE 4 [get_ports {dac_sck dac_cs_n dac_sdio0 dac_sdio2 dac_sdio3}]
 set_property SLEW SLOW [get_ports {dac_sck dac_cs_n dac_sdio0 dac_sdio1 dac_sdio2 dac_sdio3}]

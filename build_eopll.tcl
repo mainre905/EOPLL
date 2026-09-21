@@ -69,6 +69,12 @@ set PRJ_DIR  [file join $SRC_ROOT vivado $PRJ_NAME]
 #   (2026-09-06 zed_uart). tdc_zedboard_top.v 의 파라미터 삭제 주석 참조.
 
 # 384탭(96단) 기준. 체인 단수를 바꾸면 python/gen_chain_xdc.py 와 함께 여기도 고칠 것.
+# ★ 시험 전용 임시 핀맵 스위치 (EOPLL_TESTPINS). 아래 XDC 추가와 안전장치가 둘 다 본다.
+#   반드시 여기서 먼저 정해야 한다 — 2026-09-21 에 정의가 사용처보다 아래 있어
+#   "can't read TESTPINS: no such variable" 로 죽을 뻔했다 (Tcl 은 순차 실행이다).
+set TESTPINS 0
+if {[info exists EOPLL_TESTPINS]} { set TESTPINS $EOPLL_TESTPINS }
+
 set CHAIN_STAGES 96
 set NUM_TAPS     [expr {$CHAIN_STAGES * 4}]
 # ★ 2026-09-15 : COE_FILE 제거. 교정표는 이제 PS 가 Mode 1 히스토그램으로 계산해
@@ -135,11 +141,26 @@ add_files -norecurse -fileset constrs_1 $XDCF
 #         DAC 저장소에서 WNS -4.992 ns 가 났었다
 #     (1) set_output_delay 는 핀이 박힌 뒤에야 의미가 생긴다. 그때까지는 무해하다.
 #   ★ PROCESSING_ORDER LATE — XDC 가 포트를 만든 뒤에 읽혀야 한다.
-set TIMF [file join $SRC_ROOT RTL dac_timing.tcl]
-if {![file exists $TIMF]} { error "timing tcl 없음: $TIMF" }
-add_files -norecurse -fileset constrs_1 $TIMF
-set_property PROCESSING_ORDER LATE [get_files $TIMF]
-puts "\[*\] 타이밍 제약 tcl 추가 : $TIMF  (합성 로그에서 '!!!!' 를 검색할 것)"
+#   ★ 2026-09-21 (같은 날, 첫 시험 빌드 뒤 수정) — 시험용 임시 핀맵일 때는 넣지 않는다.
+#     [무엇이 있었나] eopll_tp2 빌드에서 setup WNS = -3.587 ns 가 났다. 위반 경로 5개가
+#       전부 clk_fpga_0 -> dac_sck_gen, 즉 DAC 출력 플롭에서 PMOD 패드까지였다.
+#       TDC 도메인(clk_out1/clk_out2_clk_wiz_0)에는 위반이 없었다.
+#     [왜 났나] 이 제약은 DAC 단독 프로젝트의 **FMC 핀 + IOB 패킹** 전제로 맞춘 것이다.
+#       시험용 핀맵은 (1) 핀이 PMOD 로 전혀 다르고, (2) sdio1 삼상 레지스터가 IOB 에 안 실리며
+#       (Place 30-73), (3) eopll_testpins.xdc 가 SLEW SLOW 를 걸어 출력 버퍼가 느리다.
+#       생성 클럭 dac_sck_gen 이 그 느린 버퍼를 지나 패드에서 정의되므로 예산이 더 깎인다.
+#     [왜 빼는가] 가짜 핀 위에서 DAC 출력 타이밍을 맞춰 봐야 의미가 없고, 대신 WNS 가
+#       DAC 위반에 가려 **TDC 가 타이밍을 지키는지 판단할 수 없게 된다.** 그것이 이 빌드의 목적이다.
+#     ★ 실제 핀맵이 들어오면 반드시 다시 넣고 평가할 것. 그때가 이 제약을 처음 제대로 보는 때다.
+if {$TESTPINS} {
+    puts "\[!\] 시험용 핀맵이므로 RTL/dac_timing.tcl 은 넣지 않는다 (DAC 출력 타이밍 미평가)."
+} else {
+    set TIMF [file join $SRC_ROOT RTL dac_timing.tcl]
+    if {![file exists $TIMF]} { error "timing tcl 없음: $TIMF" }
+    add_files -norecurse -fileset constrs_1 $TIMF
+    set_property PROCESSING_ORDER LATE [get_files $TIMF]
+    puts "\[*\] 타이밍 제약 tcl 추가 : $TIMF  (합성 로그에서 '!!!!' 를 검색할 것)"
+}
 
 # ★ RTL/dac_test.xdc 는 일부러 넣지 않는다 — EVAL-AD3552RFMCZ 기준이라
 #   합친 보드에서는 틀린 핀이다. 핀맵이 정해지면 새 XDC 를 만들어 여기 추가할 것.
@@ -152,8 +173,6 @@ puts "\[*\] 타이밍 제약 tcl 추가 : $TIMF  (합성 로그에서 '!!!!' 를
 #   [켜는 법]  set EOPLL_TESTPINS 1  을 source 전에 한다. 그러면 비트스트림까지 간다.
 #   ★ 실제 핀맵이 생기면 이 파일을 빼고 새 XDC 를 쓸 것. 남겨 두면 실제 배선과 충돌한다.
 # =============================================================================
-set TESTPINS 0
-if {[info exists EOPLL_TESTPINS]} { set TESTPINS $EOPLL_TESTPINS }
 if {$TESTPINS} {
     set TPF [file join $SRC_ROOT RTL eopll_testpins.xdc]
     if {![file exists $TPF]} { error "시험용 핀맵 없음: $TPF" }
