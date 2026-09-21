@@ -143,7 +143,32 @@ puts "\[*\] 타이밍 제약 tcl 추가 : $TIMF  (합성 로그에서 '!!!!' 를
 
 # ★ RTL/dac_test.xdc 는 일부러 넣지 않는다 — EVAL-AD3552RFMCZ 기준이라
 #   합친 보드에서는 틀린 핀이다. 핀맵이 정해지면 새 XDC 를 만들어 여기 추가할 것.
-puts "\[!\] DAC 핀(dac_sck/dac_cs_n/dac_sdio0..3/dac_ctrl_tri_io)에 LOC 가 없다 — 핀맵 미정"
+# =============================================================================
+# ★ 2026-09-21 — 시험 전용 임시 핀맵 (EOPLL_TESTPINS)
+#   [왜] "합친 설계에서 TDC 가 예전처럼 도는가" 를 보려면 비트스트림이 필요한데,
+#     실제 보드 핀맵이 아직 없다. RTL/eopll_testpins.xdc 가 DAC 핀을 PMOD JB/JC 로
+#     보낸다 — 뱅크 13(3.3 V 고정)이라 J18(VADJ)과 무관하고, FMC 로는 아무것도 안 나간다.
+#   [전제] PMOD JB 와 JC 에 아무것도 꽂혀 있으면 안 된다. 이 빌드가 그 핀을 구동한다.
+#   [켜는 법]  set EOPLL_TESTPINS 1  을 source 전에 한다. 그러면 비트스트림까지 간다.
+#   ★ 실제 핀맵이 생기면 이 파일을 빼고 새 XDC 를 쓸 것. 남겨 두면 실제 배선과 충돌한다.
+# =============================================================================
+set TESTPINS 0
+if {[info exists EOPLL_TESTPINS]} { set TESTPINS $EOPLL_TESTPINS }
+if {$TESTPINS} {
+    set TPF [file join $SRC_ROOT RTL eopll_testpins.xdc]
+    if {![file exists $TPF]} { error "시험용 핀맵 없음: $TPF" }
+    add_files -norecurse -fileset constrs_1 $TPF
+    puts ""
+    puts "=========================================================="
+    puts " ★ 시험 전용 임시 핀맵을 넣었다 : RTL/eopll_testpins.xdc"
+    puts "   DAC 핀 -> PMOD JB(SPI 6선) / JC(제어 4선), 뱅크 13, 3.3 V"
+    puts "   ★ PMOD JB, JC 에 아무것도 꽂혀 있지 않은지 확인할 것."
+    puts "   ★ 이것은 실제 보드 핀맵이 아니다. TDC 동작 확인용이다."
+    puts "=========================================================="
+    puts ""
+} else {
+    puts "\[!\] DAC 핀(dac_sck/dac_cs_n/dac_sdio0..3/dac_ctrl_tri_io)에 LOC 가 없다 — 핀맵 미정"
+}
 
 # ---------------------------------------------------------------- 블록 디자인
 #  ★ 2026-09-04 추가 : PS7 + proc_sys_reset + AXI 인터커넥트.
@@ -347,6 +372,9 @@ if {$DO_BUILD} {
     # =========================================================================
     set PINMAP_READY 0
     if {[info exists EOPLL_PINMAP_READY]} { set PINMAP_READY $EOPLL_PINMAP_READY }
+    # 시험용 임시 핀맵도 "핀이 박혔다" 로 친다. 모든 I/O 에 LOC 가 있으므로
+    # Vivado 가 임의 배치할 여지가 없다 — 애초에 안전장치를 둔 이유가 그것이었다.
+    if {$TESTPINS} { set PINMAP_READY 1 }
     if {!$PINMAP_READY} {
         puts ""
         puts "=========================================================="
