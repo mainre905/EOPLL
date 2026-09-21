@@ -124,6 +124,23 @@ set_property is_global_include false [get_files $VSRC]
 set XDCF [file join $SRC_ROOT RTL tdc_zedboard.xdc]
 if {![file exists $XDCF]} { error "XDC 없음: $XDCF" }
 add_files -norecurse -fileset constrs_1 $XDCF
+# ★ 2026-09-21 추가 — RTL/dac_timing.tcl 을 제약 파일셋에 넣는다.
+#   [무엇인가] DAC 의 SPI 출력 타이밍 제약 + IOB 패킹 제어. XDC 가 아니라 .tcl 인 이유는
+#     XDC 의 제한된 인터프리터가 if/foreach 를 지원하지 않기 때문이다 — DAC 저장소에서
+#     2026-09-09 에 if 블록이 통째로 건너뛰어져 **SPI 출력 제약이 하나도 안 걸린 채**
+#     비트스트림이 나왔고 타이밍 리포트는 깨끗해 보였다 (검사할 제약이 없었으니 당연하다).
+#   [왜 지금 넣나] 이 파일이 하는 일 셋 중 둘은 핀 배치와 무관하다 :
+#     (2) axi_quad_spi 안의 낡은 IOB=TRUE 를 푼다 -> Place 30-73 경고의 spi_0 쪽 원인
+#     (3) FSM 출력 레지스터에 IOB 패킹을 요청한다 -> 안 하면 플롭->패드 배선이 길어져
+#         DAC 저장소에서 WNS -4.992 ns 가 났었다
+#     (1) set_output_delay 는 핀이 박힌 뒤에야 의미가 생긴다. 그때까지는 무해하다.
+#   ★ PROCESSING_ORDER LATE — XDC 가 포트를 만든 뒤에 읽혀야 한다.
+set TIMF [file join $SRC_ROOT RTL dac_timing.tcl]
+if {![file exists $TIMF]} { error "timing tcl 없음: $TIMF" }
+add_files -norecurse -fileset constrs_1 $TIMF
+set_property PROCESSING_ORDER LATE [get_files $TIMF]
+puts "\[*\] 타이밍 제약 tcl 추가 : $TIMF  (합성 로그에서 '!!!!' 를 검색할 것)"
+
 # ★ RTL/dac_test.xdc 는 일부러 넣지 않는다 — EVAL-AD3552RFMCZ 기준이라
 #   합친 보드에서는 틀린 핀이다. 핀맵이 정해지면 새 XDC 를 만들어 여기 추가할 것.
 puts "\[!\] DAC 핀(dac_sck/dac_cs_n/dac_sdio0..3/dac_ctrl_tri_io)에 LOC 가 없다 — 핀맵 미정"
